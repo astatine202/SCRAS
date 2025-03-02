@@ -71,15 +71,8 @@ public class SlicingService {
         // 清空原文件
         Files.newBufferedWriter(rawPath, StandardOpenOption.TRUNCATE_EXISTING).close();
         // 去掉参数列表
-        removeParameterList(demangledPath, rawPath);
-        // 删除反修饰文件
-        // Files.delete(demangledPath);
-    }
-
-    @SneakyThrows
-    private void removeParameterList(Path demangledPath, Path outputPath) {
         try (BufferedReader reader = Files.newBufferedReader(demangledPath);
-                BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
+                BufferedWriter writer = Files.newBufferedWriter(rawPath)) {
             String line;
             while ((line = reader.readLine()) != null) {
                 // 使用正则表达式去掉参数列表
@@ -88,6 +81,8 @@ public class SlicingService {
                 writer.newLine();
             }
         }
+        // 删除反修饰文件
+        // Files.delete(demangledPath);
     }
 
     @SneakyThrows

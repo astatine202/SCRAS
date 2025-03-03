@@ -68,9 +68,9 @@ public class SlicingService {
             throw new RuntimeException("Demangling failed");
         }
 
-        // 清空原文件
+        // 清空原文件、去掉参数列表
+        /*
         Files.newBufferedWriter(rawPath, StandardOpenOption.TRUNCATE_EXISTING).close();
-        // 去掉参数列表
         try (BufferedReader reader = Files.newBufferedReader(demangledPath);
                 BufferedWriter writer = Files.newBufferedWriter(rawPath)) {
             String line;
@@ -81,6 +81,7 @@ public class SlicingService {
                 writer.newLine();
             }
         }
+        */
         // 删除反修饰文件
         // Files.delete(demangledPath);
     }

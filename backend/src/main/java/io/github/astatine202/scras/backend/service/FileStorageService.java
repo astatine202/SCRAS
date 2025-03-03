@@ -17,11 +17,13 @@ import java.util.stream.Stream;
 public class FileStorageService {
     private final Path inputPath = Paths.get("temp/input");
     private final Path outputPath = Paths.get("temp/output");
+    private final Path bufferPath = Paths.get("temp/buffer");
 
     @SneakyThrows
     public void init() {
         Files.createDirectories(inputPath);
         Files.createDirectories(outputPath);
+        Files.createDirectories(bufferPath);
     }
 
     @SneakyThrows
@@ -38,6 +40,7 @@ public class FileStorageService {
     public void cleanTempDirectories() {
         cleanDirectory(inputPath);
         cleanDirectory(outputPath);
+        cleanDirectory(bufferPath);
     }
 
     private void cleanDirectory(Path path) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import CodeViewer from './components/CodeViewer.vue'
 
 const codeContent = ref('')
@@ -9,8 +9,8 @@ const funcInput = ref('')
 const highlightedLines = ref<number[]>([])
 const isLoading = ref(false) // 加载状态
 const uploadError = ref('') // 上传错误状态
-const totalLineCount = ref(0);
-const highlightedLineCount = ref(0);
+const totalLineCount = ref(0)
+const highlightedLineCount = ref(0)
 
 const handleFileUpload = async (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0]
@@ -20,7 +20,8 @@ const handleFileUpload = async (e: Event) => {
     alert('请选择文件')
     return
   }
-  if (!file.name.endsWith('.c') && !file.name.endsWith('.cpp')) {
+  if (!file.name.endsWith('.c') &&
+    !file.name.endsWith('.cpp')) {
     alert('仅支持上传.c/.cpp文件')
     return
   }
@@ -41,12 +42,6 @@ const handleFileUpload = async (e: Event) => {
       const error = await response.text()
       throw new Error(`上传失败: ${error}`)
     }
-
-    // 更新前端状态
-    fileName.value = file.name
-    codeContent.value = await file.text()
-    highlightedLines.value = []
-
   } catch (error) {
     console.error('文件上传错误:', error)
     uploadError.value = error instanceof Error ? error.message : '未知错误'
@@ -54,6 +49,7 @@ const handleFileUpload = async (e: Event) => {
     codeContent.value = ''
   }
 
+  fileName.value = file.name
   const content = await file.text();
   codeContent.value = content;
   totalLineCount.value = content.split(/\r?\n/).length;
@@ -98,6 +94,19 @@ const analyzeCode = async () => {
     isLoading.value = false
   }
 }
+
+// 页面加载时清理临时目录
+const cleanTempDirectories = async () => {
+  try {
+    await fetch('http://localhost:8080/cleanTempDirectories')
+  } catch (error) {
+    console.error('清理临时目录失败:', error)
+  }
+}
+
+onMounted(() => {
+  cleanTempDirectories()
+})
 </script>
 
 <template>
@@ -112,6 +121,7 @@ const analyzeCode = async () => {
 
     <!-- 上传区域 -->
     <div class="upload-section">
+      <!-- 文件上传按钮 -->
       <div class="file-upload">
         <label>
           <input type="file" @change="handleFileUpload" accept=".c,.cpp" class="upload-input">

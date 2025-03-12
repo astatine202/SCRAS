@@ -37,12 +37,12 @@ watch(() => props.code, (newCode) => {
 <style scoped>
 /* 外层滚动容器 */
 .code-wrapper {
+  flex: 1;
   border: 1px solid #3c3c3c;
   border-radius: 4px;
   overflow: auto;
-  max-height: 60vh;
+  height: 100%;
   background: #1e1e1e;
-  margin-top: 1rem;
 }
 
 /* 代码容器布局 */

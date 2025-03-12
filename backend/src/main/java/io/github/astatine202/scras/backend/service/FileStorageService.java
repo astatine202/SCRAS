@@ -51,11 +51,9 @@ public class FileStorageService {
             files.forEach(file -> {
                 try {
                     if (Files.isDirectory(file)) {
-                        // 递归清理子目录但不删除当前目录
                         cleanDirectory(file);
-                    } else {
-                        Files.delete(file);
                     }
+                    Files.delete(file);
                 } catch (IOException e) {
                     log.error("删除文件失败: {}", file);
                 }

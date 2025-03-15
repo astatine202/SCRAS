@@ -74,7 +74,7 @@ public class SlicingController {
     private int calculateTotalLineCount(Path dir) throws IOException {
         try (Stream<Path> paths = Files.walk(dir)) {
             return paths.filter(Files::isRegularFile)
-                    .filter(path -> path.toString().endsWith(".c") || path.toString().endsWith(".cpp"))
+                    .filter(path -> path.toString().endsWith(".c") /*|| path.toString().endsWith(".cpp")*/)
                     .mapToInt(path -> {
                         try {
                             return Files.readAllLines(path).size();

@@ -130,8 +130,7 @@ public class SlicingService {
             return reader.lines()
                     .map(MULTIFILE_PATTERN::matcher)
                     .filter(Matcher::find)
-                    .filter(m -> m.group(1).equals(var)
-                            && Objects.equals(m.group(2), func))
+                    .filter(m -> m.group(1).equals(var) && (m.group(2) == null ? "" : m.group(2)).equals(func))
                     // 处理大括号内的所有条目（改进分割方式）
                     .flatMap(m -> Arrays.stream(m.group(3).split(",\\s*(?=\")")))
                     .map(String::trim)

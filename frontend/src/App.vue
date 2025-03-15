@@ -204,9 +204,9 @@ const analyzeProject = async () => {
 const selectFile = async (path: string) => {
   selectedFile.value = path;
 
-  // 检查文件是否为 .c 或 .cpp 文件
-  if (!path.endsWith('.c') && !path.endsWith('.cpp')) {
-    codeContent.value = '// 请选择一个.c/.cpp文件';
+  // 检查文件是否为.c文件
+  if (!path.endsWith('.c')) {
+    codeContent.value = '// 请选择一个.c文件';
     fileName.value = '';
     totalLineCount.value = 0;
     highlightedLines.value = [];
@@ -274,8 +274,8 @@ onMounted(() => {
       <!-- 文件上传按钮 -->
       <div class="file-upload">
         <label>
-          <input type="file" @change="handleFileUpload" accept=".c,.cpp" class="upload-input">
-          📁 上传C/C++文件
+          <input type="file" @change="handleFileUpload" accept=".c" class="upload-input">
+          📁 上传C文件
         </label>
         <span v-if="fileName" class="info">{{ fileName.replace(/\\/g, '/') }}</span>
         <span v-if="totalLineCount > 0" class="stats-info">影响域：{{ highlightedLineCount }} / {{ totalLineCount }}

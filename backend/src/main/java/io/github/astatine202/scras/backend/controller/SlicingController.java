@@ -3,6 +3,7 @@ package io.github.astatine202.scras.backend.controller;
 import io.github.astatine202.scras.backend.model.SliceProject;
 import io.github.astatine202.scras.backend.model.SliceResult;
 import io.github.astatine202.scras.backend.service.FileStorageService;
+import io.github.astatine202.scras.backend.service.ProjectService;
 import io.github.astatine202.scras.backend.service.SlicingService;
 import lombok.RequiredArgsConstructor;
 
@@ -25,6 +26,7 @@ import java.util.stream.Stream;
 public class SlicingController {
     private final FileStorageService storageService;
     private final SlicingService slicingService;
+    private final ProjectService projectService;
 
     @PostMapping("/upload")
     public ResponseEntity<String> uploadFile(@RequestParam MultipartFile file) {
@@ -36,54 +38,8 @@ public class SlicingController {
     @PostMapping("/uploadProject")
     public ResponseEntity<Map<String, Object>> uploadProject(@RequestParam MultipartFile[] files) throws IOException {
         storageService.init();
-        String originalprojectname = files[0].getOriginalFilename();
-        if (originalprojectname == null) {
-            throw new IOException("File original filename is null");
-        }
-        String projectName = originalprojectname.split("/")[0];
-        Path projectDir = Paths.get("temp/input", projectName);
-        Files.createDirectories(projectDir);
-
-        for (MultipartFile file : files) {
-            String originalFilename = file.getOriginalFilename();
-            if (originalFilename == null) {
-                throw new IOException("File original filename is null");
-            }
-            Path filePath = projectDir.resolve(originalFilename.substring(projectName.length() + 1));
-            Files.createDirectories(filePath.getParent());
-            Files.write(filePath, file.getBytes());
-        }
-
-        Map<String, Object> result = Map.of(
-                "fileTree", buildFileTree(projectDir),
-                "allTotalLineCount", calculateTotalLineCount(projectDir));
-
+        Map<String, Object> result = projectService.handleProjectUpload(files);
         return ResponseEntity.ok(result);
-    }
-
-    private List<Map<String, String>> buildFileTree(Path dir) throws IOException {
-        try (Stream<Path> paths = Files.walk(dir)) {
-            return paths.filter(Files::isRegularFile)
-                    .map(path -> Map.of(
-                            "name", path.getFileName().toString(),
-                            "path", dir.relativize(path).toString()))
-                    .collect(Collectors.toList());
-        }
-    }
-
-    private int calculateTotalLineCount(Path dir) throws IOException {
-        try (Stream<Path> paths = Files.walk(dir)) {
-            return paths.filter(Files::isRegularFile)
-                    .filter(path -> path.toString().endsWith(".c") /*|| path.toString().endsWith(".cpp")*/)
-                    .mapToInt(path -> {
-                        try {
-                            return Files.readAllLines(path).size();
-                        } catch (IOException e) {
-                            return 0;
-                        }
-                    })
-                    .sum();
-        }
     }
 
     @GetMapping("/getFileContent")

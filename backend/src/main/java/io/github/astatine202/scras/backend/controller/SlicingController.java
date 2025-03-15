@@ -18,14 +18,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @RestController
 @RequiredArgsConstructor
 public class SlicingController {
-    private final FileStorageService storageService;
     private final SlicingService slicingService;
+    private final FileStorageService storageService;
     private final ProjectService projectService;
 
     @PostMapping("/upload")

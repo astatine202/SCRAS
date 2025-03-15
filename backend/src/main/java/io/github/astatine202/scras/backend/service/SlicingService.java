@@ -178,14 +178,14 @@ public class SlicingService {
                     });
         }
 
-        // 查找所有C/C++文件并编译为LLVM IR
+        // 查找所有C文件并编译为LLVM IR
         try (Stream<Path> files = Files.walk(inputDir)) {
             files.filter(p -> p.toString().endsWith(".c")
-                    || p.toString().endsWith(".cpp"))
+                    /*|| p.toString().endsWith(".cpp")*/)
                     .forEach(cFilePath -> {
                         Path relative = inputDir.relativize(cFilePath);
                         Path llFilePath = bufferDir.resolve(relative.toString()
-                                .replaceFirst("\\.cpp$", ".ll")
+                                 /*.replaceFirst("\\.cpp$", ".ll")*/
                                 .replaceFirst("\\.c$", ".ll"));
                         compileToLLVM(cFilePath, llFilePath);
                     });

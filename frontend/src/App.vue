@@ -59,6 +59,10 @@ const handleFileUpload = async (e: Event) => {
   }
 
   fileName.value = file.name;
+  projectName.value = '';
+  varInput.value = '';
+  funcInput.value = '';
+  uploadError.value = '';
   const content = await file.text();
   codeContent.value = content;
   totalLineCount.value = content.split(/\r?\n/).length;
@@ -107,6 +111,9 @@ const handleProjectUpload = async (e: Event) => {
     uploadError.value = error instanceof Error ? error.message : '未知错误';
   }
   fileName.value = '';
+  varInput.value = '';
+  funcInput.value = '';
+  uploadError.value = '';
   codeContent.value = '';
   highlightedLines.value = [];
   highlightedLineCount.value = 0;

@@ -21,6 +21,7 @@ import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
+@RequestMapping("/api/slice")
 public class SlicingController {
     private final SlicingService slicingService;
     private final FileStorageService storageService;

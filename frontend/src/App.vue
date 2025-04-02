@@ -2,7 +2,9 @@
 import { ref, onMounted } from 'vue'
 import CodeViewer from './components/CodeViewer.vue'
 
-const BASE_URL = 'http://localhost:8080'
+const URL_BASE = 'http://localhost:8080'
+const API_SLICE = '/api/slice'
+const API_FILE = '/api/file'
 const codeContent = ref('')
 const fileName = ref('')
 const projectName = ref('')
@@ -41,7 +43,7 @@ const handleFileUpload = async (e: Event) => {
     formData.append('file', file);
 
     // 发送上传请求
-    const response = await fetch(`${BASE_URL}/upload`, {
+    const response = await fetch(`${URL_BASE}${API_SLICE}/upload`, {
       method: 'POST',
       body: formData
     })
@@ -91,7 +93,7 @@ const handleProjectUpload = async (e: Event) => {
   }
 
   try {
-    const response = await fetch(`${BASE_URL}/uploadProject`, {
+    const response = await fetch(`${URL_BASE}/uploadProject`, {
       method: 'POST',
       body: formData
     })
@@ -146,7 +148,7 @@ const analyzeCode = async () => {
   isLoading.value = true
   try {
     const response = await fetch(
-      `${BASE_URL}/slice?filename=${fileName.value}&variable=${varInput.value}&function=${funcInput.value}`
+      `${URL_BASE}${API_SLICE}/slice?filename=${fileName.value}&variable=${varInput.value}&function=${funcInput.value}`
     );
 
     if (!response.ok) {
@@ -184,7 +186,7 @@ const analyzeProject = async () => {
   isLoading.value = true;
   try {
     const response = await fetch(
-      `${BASE_URL}/sliceProject?projectName=${projectName.value}&variable=${varInput.value}&function=${funcInput.value}&filename=${selectedFile.value.replace(/\\/g, '/')}`
+      `${URL_BASE}${API_SLICE}/sliceProject?projectName=${projectName.value}&variable=${varInput.value}&function=${funcInput.value}&filename=${selectedFile.value.replace(/\\/g, '/')}`
     );
 
     if (!response.ok) {
@@ -222,7 +224,7 @@ const selectFile = async (path: string) => {
   }
 
   try {
-    const response = await fetch(`${BASE_URL}/getFileContent?path=${encodeURIComponent(projectName.value + '/' + path)}`);
+    const response = await fetch(`${URL_BASE}${API_SLICE}/getFileContent?path=${encodeURIComponent(projectName.value + '/' + path)}`);
     if (!response.ok) {
       throw new Error(`无法加载文件内容: ${response.statusText}`);
     }
@@ -255,7 +257,7 @@ const selectFile = async (path: string) => {
 // 页面加载时清理临时目录
 const cleanTempDirectories = async () => {
   try {
-    await fetch(`${BASE_URL}/cleanTempDirectories`);
+    await fetch(`${URL_BASE}${API_FILE}/cleanTempDirectories`);
   } catch (error) {
     console.error('清理临时目录失败:', error);
   }

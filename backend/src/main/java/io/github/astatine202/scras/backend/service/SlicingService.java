@@ -53,8 +53,7 @@ public class SlicingService {
                 "docker", "run", "--rm", "-v",
                 Paths.get("").toAbsolutePath().toString() + ":/workspace",
                 "nuptzyz/llvm-slicing", "llvm-slicing",
-                "/workspace/temp/" + dir + "/" + filename, "-d", "Fwd",
-                "-m", "IFDS");
+                "/workspace/temp/" + dir + "/" + filename, "-d", "Fwd");
 
         pb.redirectOutput(ProcessBuilder.Redirect.to(
                 new File(getOutputPath(filename, "_Fwd.txt").toString())));

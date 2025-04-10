@@ -7,6 +7,7 @@ import io.github.astatine202.scras.backend.service.ProjectService;
 import io.github.astatine202.scras.backend.service.SlicingService;
 import lombok.RequiredArgsConstructor;
 
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,12 +24,15 @@ import java.util.Map;
 @RequiredArgsConstructor
 @RequestMapping("/api/slice")
 public class SlicingController {
-    private final SlicingService slicingService;
     private final FileStorageService storageService;
     private final ProjectService projectService;
+    private final ApplicationContext applicationContext; // 注入 Spring 上下文
+    private SlicingService slicingService; // 当前的 SlicingService 实例
 
     @PostMapping("/upload")
     public ResponseEntity<String> uploadFile(@RequestParam MultipartFile file) {
+        // 每次上传时创建新的 SlicingService 实例
+        slicingService = applicationContext.getBean(SlicingService.class);
         storageService.init();
         String filename = storageService.save(file);
         return ResponseEntity.ok(filename);
@@ -36,6 +40,8 @@ public class SlicingController {
 
     @PostMapping("/uploadProject")
     public ResponseEntity<Map<String, Object>> uploadProject(@RequestParam MultipartFile[] files) throws IOException {
+        // 每次上传项目时创建新的 SlicingService 实例
+        slicingService = applicationContext.getBean(SlicingService.class);
         storageService.init();
         Map<String, Object> result = projectService.handleProjectUpload(files);
         return ResponseEntity.ok(result);
@@ -74,8 +80,18 @@ public class SlicingController {
         try {
             Map<String, List<Integer>> lines = slicingService.processSlice(filename,
                     variable, function, projectName);
-            System.out.println(lines);
             return ResponseEntity.ok(new SliceProject(variable, function, filename, lines));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/callChainDepth")
+    public ResponseEntity<Integer> getCallChainfDepth(
+            @RequestParam String function) {
+        try {
+            int depth = slicingService.calCallChainDepth(function);
+            return ResponseEntity.ok(depth);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }

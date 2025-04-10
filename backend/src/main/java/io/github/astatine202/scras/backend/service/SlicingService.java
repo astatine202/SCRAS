@@ -1,7 +1,10 @@
 package io.github.astatine202.scras.backend.service;
 
+import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Service;
 import java.io.*;
 import java.nio.file.*;
@@ -11,40 +14,74 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Service
+@Scope("prototype")
 @Slf4j
 public class SlicingService {
+    private static final String IMAGE = "nuptzyz/llvm-slicing";
+    private static final String LLVM_SLICING = "llvm-slicing";
+    private static final String LLVM_LINK = "llvm-link-3.3";
+
+    private final String TEMP = "temp";
+    private static final String INPUT = "input";
+    private static final String OUTPUT = "output";
+    private static final String BUFFER = "buffer";
+    private final String PATH_INPUT = Paths.get(TEMP, INPUT).toString();
+    private final String PATH_OUTPUT = Paths.get(TEMP, OUTPUT).toString();
+    private final String PATH_BUFFER = Paths.get(TEMP, BUFFER).toString();
+
+    private static final String FILE_LL = "output.ll";
+    private static final String FILE_FWD = "output_Fwd.txt";
+    private static final String FILE_DOT = "callgraph.dot";
+
+    private final Path LLPATH = Paths.get(PATH_OUTPUT, FILE_LL);
+    private final Path FWDPATH = Paths.get(PATH_OUTPUT, FILE_FWD);
+    private final Path DOTPATH = Paths.get(PATH_OUTPUT, FILE_DOT);
+
     private static final Pattern LINE_PATTERN = Pattern
             .compile("(\\w+)(?:@(\\w+))?\\s+\\{\".*?: \\[(.*?)\\]\"}");
     private static final Pattern MULTIFILE_PATTERN = Pattern.compile(
             "(\\w+)(?:@(\\w+))?\\s+\\{([^}]+)\\}",
             Pattern.DOTALL);
 
+    @Data
+    private static class SliceInfo {
+        private final String var;
+        private final Map<String, List<Integer>> impactDomain;
+    }
+
+    @Data
+    private static class NodeInfo {
+        private final String nodeId;
+        private final int depth;
+    }
+
+    private final Map<String, List<SliceInfo>> sliceInfoMap = new HashMap<>();
+    private final Map<String, NodeInfo> nodeMap = new HashMap<>();
+    private final Map<String, Set<String>> callGraph = new HashMap<>();
+
     private Path getOutputPath(String filename, String suffix) {
-        return Paths.get("temp/output",
+        return Paths.get(PATH_OUTPUT,
                 filename.replaceFirst("\\.[^.]+$", suffix));
     }
 
     @SneakyThrows
     public List<Integer> processSlice(String filename, String var, String func) {
-        Path outputPath = getOutputPath(filename, "_Fwd.txt");
-
-        if (!Files.exists(outputPath)) {
-            runSlicingTool("input", filename);
+        Path inputPath = Paths.get(PATH_INPUT, filename);
+        if (!Files.exists(FWDPATH)) {
+            compileToLLVM(inputPath, LLPATH);
+            runSlicingTool(OUTPUT, FILE_LL);
         }
-
-        return parseSliceResult(outputPath, var, func);
+        return parseSliceResult(FWDPATH, var, func);
     }
 
     @SneakyThrows
     public Map<String, List<Integer>> processSlice(String fileName,
             String var, String func, String projectName) {
-        Path outputPath = getOutputPath(projectName + ".ll", "_Fwd.txt");
-
-        if (!Files.exists(outputPath)) {
+        if (!Files.exists(FWDPATH)) {
             processProject(projectName);
+            runSlicingTool(OUTPUT, FILE_LL);
         }
-
-        return parseSliceResult(outputPath, var, func, projectName);
+        return parseSliceResult(FWDPATH, var, func, projectName);
     }
 
     @SneakyThrows
@@ -52,7 +89,7 @@ public class SlicingService {
         ProcessBuilder pb = new ProcessBuilder(
                 "docker", "run", "--rm", "-v",
                 Paths.get("").toAbsolutePath().toString() + ":/workspace",
-                "nuptzyz/llvm-slicing", "llvm-slicing",
+                IMAGE, LLVM_SLICING,
                 "/workspace/temp/" + dir + "/" + filename, "-d", "Fwd");
 
         pb.redirectOutput(ProcessBuilder.Redirect.to(
@@ -63,44 +100,7 @@ public class SlicingService {
         if (process.waitFor() != 0) {
             throw new RuntimeException("Slicing failed");
         }
-        if (filename.endsWith(".cpp")) {
-            demangleResultFile(filename);
-        }
-    }
-
-    @SneakyThrows
-    private void demangleResultFile(String filename) {
-        Path rawPath = getOutputPath(filename, "_Fwd.txt");
-        Path demangledPath = getOutputPath(filename, "_Fwd_demangled.txt");
-
-        // 使用c++filt进行反修饰
-        ProcessBuilder pb = new ProcessBuilder("c++filt");
-        pb.redirectInput(ProcessBuilder.Redirect.from(rawPath.toFile()));
-        pb.redirectOutput(ProcessBuilder.Redirect.to(demangledPath.toFile()));
-        Process process = pb.start();
-
-        int exitCode = process.waitFor();
-        if (exitCode != 0) {
-            throw new RuntimeException("Demangling failed");
-        }
-
-        // 清空原文件、去掉参数列表
-        /*
-         * Files.newBufferedWriter(rawPath,
-         * StandardOpenOption.TRUNCATE_EXISTING).close();
-         * try (BufferedReader reader = Files.newBufferedReader(demangledPath);
-         * BufferedWriter writer = Files.newBufferedWriter(rawPath)) {
-         * String line;
-         * while ((line = reader.readLine()) != null) {
-         * // 使用正则表达式去掉参数列表
-         * String modifiedLine = line.replaceAll("(\\w+@\\w+)\\(.*?\\)", "$1");
-         * writer.write(modifiedLine);
-         * writer.newLine();
-         * }
-         * }
-         */
-        // 删除反修饰文件
-        // Files.delete(demangledPath);
+        callgraph();
     }
 
     @SneakyThrows
@@ -161,8 +161,8 @@ public class SlicingService {
     // 多文件的处理
     @SneakyThrows
     public void processProject(String projectName) {
-        Path inputDir = Paths.get("temp/input", projectName);
-        Path bufferDir = Paths.get("temp/buffer", projectName);
+        Path inputDir = Paths.get(PATH_INPUT, projectName);
+        Path bufferDir = Paths.get(PATH_BUFFER, projectName);
         Files.createDirectories(bufferDir);
 
         try (Stream<Path> paths = Files.walk(inputDir)) {
@@ -180,19 +180,17 @@ public class SlicingService {
         // 查找所有C文件并编译为LLVM IR
         try (Stream<Path> files = Files.walk(inputDir)) {
             files.filter(p -> p.toString().endsWith(".c")
-                    /*|| p.toString().endsWith(".cpp")*/)
+            /* || p.toString().endsWith(".cpp") */)
                     .forEach(cFilePath -> {
                         Path relative = inputDir.relativize(cFilePath);
                         Path llFilePath = bufferDir.resolve(relative.toString()
-                                 /*.replaceFirst("\\.cpp$", ".ll")*/
+                                /* .replaceFirst("\\.cpp$", ".ll") */
                                 .replaceFirst("\\.c$", ".ll"));
                         compileToLLVM(cFilePath, llFilePath);
                     });
         }
 
-        Path linkedLLPath = Paths.get("temp/output", projectName + ".ll");
-        llvm_link(bufferDir, linkedLLPath);
-        runSlicingTool("output", projectName + ".ll");
+        llvm_link(bufferDir, LLPATH);
     }
 
     @SneakyThrows
@@ -202,8 +200,7 @@ public class SlicingService {
         ProcessBuilder pb = new ProcessBuilder(
                 "docker", "run", "--rm", "-v",
                 Paths.get("").toAbsolutePath() + ":/workspace",
-                "nuptzyz/llvm-slicing",
-                "clang", "-emit-llvm", "-S", "-O0", "-g",
+                IMAGE, "clang", "-emit-llvm", "-S", "-O0", "-g",
                 c.toString().replace("\\", "/"),
                 "-o",
                 l.toString().replace("\\", "/"));
@@ -226,26 +223,99 @@ public class SlicingService {
         List<String> command = new ArrayList<>(Arrays.asList(
                 "docker", "run", "--rm", "-v",
                 Paths.get("").toAbsolutePath() + ":/workspace",
-                "nuptzyz/llvm-slicing",
-                "llvm-link-3.3", "-S"));
+                IMAGE, LLVM_LINK, "-S"));
         command.addAll(llFiles);
         command.addAll(Arrays.asList("-o", l.toString().replace("\\", "/")));
 
         ProcessBuilder pb = new ProcessBuilder(command);
-
-        /*
-         * ProcessBuilder pb = new ProcessBuilder(
-         * "docker", "run", "--rm", "-v",
-         * Paths.get("").toAbsolutePath() + ":/workspace",
-         * "nuptzyz/llvm-slicing",
-         * "llvm-link-3.3", "-S",
-         * String.join(" ", llFiles).replace("\\", "/"),
-         * "-o", l.toString().replace("\\", "/"));
-         */
         Process process = pb.start();
         if (process.waitFor() != 0) {
             System.out.println("\n" + pb.command());
             throw new RuntimeException("Slicing failed");
         }
     }
+
+    @SneakyThrows
+    private void callgraph() {
+        // 调用 opt 工具生成调用图
+        ProcessBuilder pb = new ProcessBuilder(
+                "docker", "run", "--rm", "-v",
+                Paths.get("").toAbsolutePath().toString() + ":/workspace",
+                IMAGE, "/bin/bash", "-c",
+                "cd /workspace && cd " + PATH_OUTPUT.replace("\\", "/")
+                        + " && opt -dot-callgraph " + FILE_LL
+                        + " && dot -Tpng " + FILE_DOT + " -o callgraph.png");
+        Process process = pb.start();
+        if (process.waitFor() != 0) {
+            throw new RuntimeException("Failed to generate call graph");
+        }
+        // 解析生成的调用图
+        dotParser(DOTPATH);
+    }
+
+    @SneakyThrows
+    private void dotParser(Path dotPath) {
+        try (BufferedReader reader = Files.newBufferedReader(dotPath)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.matches("Node\\w+ \\[.*label=.*\\];")) {
+                    String nodeId = line.substring(0, line.indexOf(" "));
+                    String label = line.replaceAll(".*label=\"\\{(.*?)\\}\".*", "$1");
+                    nodeMap.put(label, new NodeInfo(nodeId, -1)); // 初始深度为 -1
+                } else if (line.matches("Node\\w+ -> Node\\w+;")) {
+                    String[] parts = line.split(" -> ");
+                    String fromNode = parts[0].trim();
+                    String toNode = parts[1].replace(";", "").trim();
+                    callGraph.computeIfAbsent(fromNode, k -> new HashSet<>()).add(toNode);
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to parse dot file", e);
+        }
+
+        // 计算所有节点的调用链深度并存储
+        for (Map.Entry<String, NodeInfo> entry : nodeMap.entrySet()) {
+            String functionName = entry.getKey();
+            NodeInfo nodeInfo = entry.getValue();
+            int depth = calculateDepth(nodeInfo.getNodeId(), 0, new HashSet<>());
+            nodeMap.put(functionName, new NodeInfo(nodeInfo.getNodeId(), depth));
+        }
+
+        // 打印调用图和深度信息
+        // System.out.println("Node Map: " + nodeMap);
+        // System.out.println("Call Graph: " + callGraph);
+    }
+
+    private int calculateDepth(String nodeId, int depth, Set<String> visited) {
+        // 检查是否已经访问过当前节点
+        if (visited.contains(nodeId)) {
+            // 如果存在循环调用，返回当前深度
+            return depth;
+        }
+
+        // 将当前节点标记为已访问
+        visited.add(nodeId);
+
+        Set<String> children = callGraph.get(nodeId);
+        if (children == null || children.isEmpty()) {
+            return depth;
+        }
+
+        // 递归计算子节点的最大深度
+        return children.stream()
+                .mapToInt(child -> calculateDepth(child, depth + 1, visited))
+                .max()
+                .orElse(depth);
+    }
+
+    @SneakyThrows
+    public int calCallChainDepth(String func) {
+        NodeInfo nodeInfo = nodeMap.get(func);
+        if (nodeInfo == null) {
+            throw new IllegalArgumentException("Function not found: " + func);
+        }
+        return nodeInfo.getDepth();
+    }
+
 }

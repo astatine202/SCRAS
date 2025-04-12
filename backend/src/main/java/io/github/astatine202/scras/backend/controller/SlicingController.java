@@ -85,15 +85,4 @@ public class SlicingController {
             return ResponseEntity.internalServerError().build();
         }
     }
-
-    @GetMapping("/callChainDepth")
-    public ResponseEntity<Integer> getCallChainfDepth(
-            @RequestParam String function) {
-        try {
-            int depth = slicingService.calCallChainDepth(function);
-            return ResponseEntity.ok(depth);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
-        }
-    }
 }

@@ -132,7 +132,6 @@ const analyze = async () => {
   } else {
     await analyzeCode();
   }
-  await getCallChainDepth();
 }
 
 const analyzeCode = async () => {
@@ -254,32 +253,6 @@ const selectFile = async (path: string) => {
     highlightedLines.value = [];
     highlightedLineCount.value = 0;
     allHighlightedLineCount.value = 0;
-  }
-}
-
-const getCallChainDepth = async () => {
-  if (!funcInput.value) {
-    alert('请先输入入口函数名');
-    return;
-  }
-
-  isLoading.value = true; // 显示加载状态
-  try {
-    const response = await fetch(
-      `${URL_BASE}${API_SLICE}/callChainDepth?function=${funcInput.value}`
-    );
-
-    if (!response.ok) {
-      throw new Error(`请求失败: ${response.status} ${response.statusText}`);
-    }
-
-    const depth = await response.json();
-    alert(`调用链深度: ${depth}`);
-  } catch (error) {
-    console.error('获取调用链深度失败:', error);
-    alert(`获取调用链深度失败: ${error instanceof Error ? error.message : '未知错误'}`);
-  } finally {
-    isLoading.value = false; // 隐藏加载状态
   }
 }
 

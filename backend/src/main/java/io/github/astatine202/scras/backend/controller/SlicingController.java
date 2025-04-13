@@ -50,7 +50,8 @@ public class SlicingController {
     @GetMapping("/getFileContent")
     public ResponseEntity<String> getFileContent(@RequestParam String path) {
         try {
-            Path filePath = Paths.get("temp/input", path);
+            String inputPath = "temp/input";
+            Path filePath = Paths.get(inputPath, path);
             String content = Files.readString(filePath);
             return ResponseEntity.ok(content);
         } catch (IOException e) {

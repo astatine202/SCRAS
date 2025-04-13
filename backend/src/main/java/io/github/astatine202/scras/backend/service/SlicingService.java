@@ -6,6 +6,9 @@ import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
@@ -38,8 +41,6 @@ public class SlicingService {
     private final Path DOTPATH = Paths.get(PATH_OUTPUT, FILE_DOT);
     private final Path CFGPATH = Paths.get(PATH_OUTPUT, "cfg");
 
-    private static final double[] WEIGHTS = { 0.3, 0.3, 0.2, 0.2 };
-
     private static final Pattern LINE_PATTERN = Pattern
             .compile("(\\w+)(?:@(\\w+))?\\s+\\{\".*?: \\[(.*?)\\]\"}");
     private static final Pattern MULTIFILE_PATTERN = Pattern.compile(
@@ -49,7 +50,8 @@ public class SlicingService {
     @Data
     private static class SliceInfo {
         private final String var;
-        private final Map<String, List<Integer>> impactDomain;
+        private final String func;
+        private final Map<String, List<Integer>> results;
     }
 
     @Data
@@ -59,10 +61,8 @@ public class SlicingService {
         private final int callCount;
         private final int fanOut;
         private final int mccabeComplexity;
-        private final double moduleImportance;
     }
 
-    // private final Map<String, List<SliceInfo>> sliceInfoMap = new HashMap<>();
     private final Map<String, NodeInfo> nodeMap = new HashMap<>();
     private final Map<String, Set<String>> callGraph = new HashMap<>();
 
@@ -87,6 +87,7 @@ public class SlicingService {
         if (!Files.exists(FWDPATH)) {
             processProject(projectName);
             runSlicingTool(OUTPUT, FILE_LL);
+            fwdParser(FWDPATH, projectName);
         }
         return parseSliceResult(FWDPATH, var, func, projectName);
     }
@@ -163,6 +164,54 @@ public class SlicingService {
                                     .sorted()
                                     .collect(Collectors.toList())));
         }
+    }
+
+    @SneakyThrows
+    private void fwdParser(Path resultPath, String projectName) {
+        // 定义正则表达式匹配每一行条目
+        final Pattern entryPattern = Pattern.compile(
+                "(\\w+)(?:@(\\w+))?\\s+\\{(\".*?\".*?)}");
+
+        List<SliceInfo> sliceInfoList = new ArrayList<>();
+
+        System.out.println("Parsing slice result from: " + resultPath);
+
+        try (BufferedReader reader = Files.newBufferedReader(resultPath)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                Matcher matcher = entryPattern.matcher(line);
+                if (matcher.find()) {
+                    String var = matcher.group(1); // 变量名
+                    String func = matcher.group(2) == null ? "" : matcher.group(2); // 函数名，若无则为空字符串
+                    String rawResults = matcher.group(3); // 原始结果内容
+
+                    // 解析结果内容
+                    Map<String, List<Integer>> results = Arrays.stream(rawResults.split(",\\s*(?=\")"))
+                            .map(String::trim)
+                            .map(entry -> entry.replaceAll("\"", "")) // 去掉双引号
+                            .map(entry -> entry.split(":\\s*\\[")) // 分割路径和行号
+                            .filter(parts -> parts.length == 2)
+                            .collect(Collectors.toMap(
+                                    parts -> parts[0].replaceFirst(".*/" + Pattern.quote(projectName) + "/", ""), // 过滤掉前缀
+                                    parts -> Arrays.stream(parts[1].replace("]", "").split(",\\s*")) // 解析行号
+                                            .map(Integer::parseInt)
+                                            .collect(Collectors.toList())));
+
+                    // 创建 SliceInfo 对象并添加到列表
+                    sliceInfoList.add(new SliceInfo(var, func, results));
+                }
+            }
+        }
+
+        System.out.println("Parsed slice info: " + sliceInfoList.size() + " entries.");
+
+        // 将结果输出为 JSON 文件
+        ObjectMapper objectMapper = new ObjectMapper();
+        Path jsonFilePath = Paths.get(PATH_OUTPUT, "slice_info.json");
+        objectMapper.writerWithDefaultPrettyPrinter()
+                .writeValue(jsonFilePath.toFile(), sliceInfoList);
+
+        System.out.println("Slice info saved to: " + jsonFilePath);
     }
 
     // 多文件的处理
@@ -244,19 +293,52 @@ public class SlicingService {
 
     @SneakyThrows
     private void dot() {
+        System.out.println("Generating call graph from: " + LLPATH);
         // 调用 opt 工具生成CG & CFG
         ProcessBuilder pb = new ProcessBuilder(
                 "docker", "run", "--rm", "-v",
                 Paths.get("").toAbsolutePath().toString() + ":/workspace",
                 IMAGE, "/bin/bash", "-c",
                 "cd /workspace && cd " + PATH_OUTPUT.replace("\\", "/")
-                        + " && opt -dot-callgraph " + FILE_LL
+                        + " && opt -dot-callgraph " + FILE_LL + " -S -o " + FILE_LL
                         + " && dot -Tpng " + FILE_DOT + " -o callgraph.png"
                         + " && mkdir cfg && cd cfg && opt -dot-cfg ../" + FILE_LL);
         Process process = pb.start();
+
+        // opt -dot-callgraph output.ll
+        // 会不可避免地在控制台进行标准输出, 从而造成缓冲区阻塞, 需要疏通
+        try (BufferedReader stdOut = new BufferedReader(new InputStreamReader(process.getInputStream()));
+                BufferedReader stdErr = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+                BufferedWriter outputWriter = Files.newBufferedWriter(Paths.get(PATH_OUTPUT, "process_stdout.log"),
+                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                BufferedWriter errorWriter = Files.newBufferedWriter(Paths.get(PATH_OUTPUT, "process_stderr.log"),
+                        StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+
+            // 将标准输出写入文件
+            stdOut.lines().forEach(line -> {
+                try {
+                    outputWriter.write(line);
+                    outputWriter.newLine();
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+
+            // 将错误输出写入文件
+            stdErr.lines().forEach(line -> {
+                try {
+                    errorWriter.write(line);
+                    errorWriter.newLine();
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+        }
+
         if (process.waitFor() != 0) {
             throw new RuntimeException("Failed to generate call graph");
         }
+        System.out.println("Call graph generated: " + DOTPATH);
         // 解析生成的调用图
         dotParser(DOTPATH);
         System.out.println("Node Map:");
@@ -274,7 +356,7 @@ public class SlicingService {
                 if (line.matches("Node\\w+ \\[.*label=.*\\];")) {
                     String nodeId = line.substring(0, line.indexOf(" "));
                     String label = line.replaceAll(".*label=\"\\{(.*?)\\}\".*", "$1");
-                    nodeMap.put(label, new NodeInfo(nodeId, -1, 0, 0, 0, 0.0));
+                    nodeMap.put(label, new NodeInfo(nodeId, -1, 0, 0, 0));
                 } else if (line.matches("Node\\w+ -> Node\\w+;")) {
                     String[] parts = line.split(" -> ");
                     String fromNode = parts[0].trim();
@@ -300,24 +382,7 @@ public class SlicingService {
             int mccabeComplexity = mccabeComplexityMap.getOrDefault(functionName, 0);
             nodeMap.put(functionName, new NodeInfo(
                     nodeInfo.getNodeId(),
-                    depth, callCount, fanOut, mccabeComplexity,
-                    0.0));
-        }
-
-        // 计算每个节点的重要性
-        Map<String, Double> importanceMap = calmoduleImportance(
-                WEIGHTS[0], WEIGHTS[1], WEIGHTS[2], WEIGHTS[3]);
-        for (Map.Entry<String, NodeInfo> entry : nodeMap.entrySet()) {
-            String functionName = entry.getKey();
-            NodeInfo nodeInfo = entry.getValue();
-            double moduleImportance = importanceMap.getOrDefault(functionName, 0.0);
-            nodeMap.put(functionName, new NodeInfo(
-                    nodeInfo.getNodeId(),
-                    nodeInfo.getDepth(),
-                    nodeInfo.getCallCount(),
-                    nodeInfo.getFanOut(),
-                    nodeInfo.getMccabeComplexity(),
-                    moduleImportance));
+                    depth, callCount, fanOut, mccabeComplexity));
         }
     }
 
@@ -377,57 +442,4 @@ public class SlicingService {
         return complexityMap;
     }
 
-    @SneakyThrows
-    public Map<String, Double> calmoduleImportance(double c1, double c2, double c3, double c4) {
-        // 检查权重是否有效
-        if (Math.abs(c1 + c2 + c3 + c4 - 1.0) > 1e-6) {
-            throw new IllegalArgumentException("Weights must sum to 1");
-        }
-
-        // 获取所有节点的深度、被调用数、扇出度和McCabe复杂度
-        List<Integer> depths = nodeMap.values().stream()
-                .map(NodeInfo::getDepth).collect(Collectors.toList());
-        List<Integer> callCounts = nodeMap.values().stream()
-                .map(NodeInfo::getCallCount).collect(Collectors.toList());
-        List<Integer> fanOuts = nodeMap.values().stream()
-                .map(NodeInfo::getFanOut).collect(Collectors.toList());
-        List<Integer> mccabeComplexities = nodeMap.values().stream()
-                .map(NodeInfo::getMccabeComplexity).collect(Collectors.toList());
-
-        // 计算每个指标的最大值和最小值
-        int maxDepth = Collections.max(depths);
-        int minDepth = Collections.min(depths);
-        int maxCallCount = Collections.max(callCounts);
-        int minCallCount = Collections.min(callCounts);
-        int maxFanOut = Collections.max(fanOuts);
-        int minFanOut = Collections.min(fanOuts);
-        int maxMccabeComplexity = Collections.max(mccabeComplexities);
-        int minMccabeComplexity = Collections.min(mccabeComplexities);
-
-        // 计算每个节点的重要性
-        Map<String, Double> importanceMap = new HashMap<>();
-        for (Map.Entry<String, NodeInfo> entry : nodeMap.entrySet()) {
-            String functionName = entry.getKey();
-            NodeInfo nodeInfo = entry.getValue();
-
-            // 归一化
-            double normalizedDepth = (maxDepth == minDepth) ? 0
-                    : (double) (nodeInfo.getDepth() - minDepth) / (maxDepth - minDepth);
-            double normalizedCallCount = (maxCallCount == minCallCount) ? 0
-                    : (double) (nodeInfo.getCallCount() - minCallCount) / (maxCallCount - minCallCount);
-            double normalizedFanOut = (maxFanOut == minFanOut) ? 0
-                    : (double) (nodeInfo.getFanOut() - minFanOut) / (maxFanOut - minFanOut);
-            double normalizedMccabeComplexity = (maxMccabeComplexity == minMccabeComplexity) ? 0
-                    : (double) (nodeInfo.getMccabeComplexity() - minMccabeComplexity)
-                            / (maxMccabeComplexity - minMccabeComplexity);
-
-            // 计算重要性
-            double importance = c1 * normalizedDepth +
-                    c2 * normalizedCallCount +
-                    c3 * normalizedFanOut +
-                    c4 * normalizedMccabeComplexity;
-            importanceMap.put(functionName, importance);
-        }
-        return importanceMap;
-    }
 }
